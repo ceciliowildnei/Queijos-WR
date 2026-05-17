@@ -1,16 +1,91 @@
-import React,{useEffect,useMemo,useState}from'react';import{createRoot}from'react-dom/client';import{createClient}from'@supabase/supabase-js';import'./styles.css';
-type C={id:string;nome:string;telefone:string;rua?:string;numero?:string;bairro?:string;cidade?:string;estado?:string};type P={id:string;nome:string;unidade:string;preco:number;ativo:boolean};type A={id:string;nome:string;telefone:string;pin:string;papel:'Administrador'};type O={id:string;codigo:string;clienteId:string;clienteNome:string;telefone:string;produtoId:string;produtoNome:string;quantidade:number;precoUnitario:number;total:number;tipoEntrega:string;endereco:string;formaPagamento:string;statusPagamento:string;statusPedido:string;observacoes:string;dataPedido:string;dataEntrega:string};type S={clientes:C[];produtos:P[];pedidos:O[];admins:A[];whatsappNegocio:string};type U={nome:string;telefone:string;papel:'Administrador'}|null;
-const APP='queijos-wr-pedidos',URL=import.meta.env.VITE_SUPABASE_URL||'https://ywwztahbqgiwervbwudg.supabase.co',KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||'sb_publishable_er0Z1O0s1opKniqu3cYkGg_svVBvXRx',sb=createClient(URL,KEY),ADM='18997232533';
-const nums=(v:string)=>String(v||'').replace(/\D/g,''),id=()=>Math.random().toString(36).slice(2)+Date.now().toString(36),money=(v:number)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),today=()=>new Date().toISOString().slice(0,10),fri=()=>{const d=new Date();d.setDate(d.getDate()+((5-d.getDay()+7)%7));return d.toISOString().slice(0,10)},addr=(c?:C)=>c?[c.rua,c.numero,c.bairro,c.cidade,c.estado].filter(Boolean).join(', '):'';
-const init:S={clientes:[],pedidos:[],produtos:[{id:'queijo-1kg',nome:'Queijo 1kg',unidade:'kg',preco:35,ativo:true},{id:'queijo-500g',nome:'Queijo 500g',unidade:'500g',preco:18,ativo:true},{id:'leite',nome:'Leite',unidade:'litro',preco:0,ativo:true}],admins:[{id:'admin-1',nome:'Wildnei',telefone:ADM,pin:'1234',papel:'Administrador'},{id:'admin-2',nome:'Wildnei',telefone:'18997670950',pin:'1234',papel:'Administrador'}],whatsappNegocio:'5518997232533'};const keys:any={clientes:'qlp_clientes',produtos:'qlp_produtos',pedidos:'qlp_pedidos',admins:'qlp_admins',whatsappNegocio:'qlp_whatsapp_negocio'};
-async function get(k:string,f:any){const{data,error}=await sb.from('app_state').select('value').eq('app_id',APP).eq('key',k).maybeSingle();if(error)throw error;if(data?.value==null){await set(k,f);return f}return data.value}async function set(k:string,v:any){const{error}=await sb.from('app_state').upsert({app_id:APP,key:k,value:v,updated_at:new Date().toISOString()},{onConflict:'app_id,key'});if(error)throw error}async function load():Promise<S>{return{clientes:await get(keys.clientes,init.clientes),produtos:await get(keys.produtos,init.produtos),pedidos:await get(keys.pedidos,init.pedidos),admins:await get(keys.admins,init.admins),whatsappNegocio:await get(keys.whatsappNegocio,init.whatsappNegocio)}}function Logo(){return <div className="marca"><b>Queijos WR</b><small>Sabor e tradicao</small></div>}
-function App(){const[st,setSt]=useState<S>(init),[u,setU]=useState<U>(()=>JSON.parse(localStorage.getItem('qlp_usuario')||'null')),[t,setT]=useState('dash'),[loading,setLoading]=useState(true),[err,setErr]=useState('');async function ref(){try{setSt(await load());setErr('')}catch(e:any){setErr(e.message||'Erro no banco')}finally{setLoading(false)}}async function save(k:keyof S,v:any){try{setSt(s=>({...s,[k]:v}));await set(keys[k],v);await ref()}catch(e:any){alert('Erro ao salvar: '+(e.message||'erro'));await ref()}}useEffect(()=>{ref();const i=setInterval(ref,10000);return()=>clearInterval(i)},[]);const ps=st.pedidos.filter(p=>p.dataEntrega===fri()),r=useMemo(()=>({ped:ps.length,rec:ps.reduce((a,p)=>a+p.total,0),q1:ps.filter(p=>p.produtoNome==='Queijo 1kg').reduce((a,p)=>a+p.quantidade,0),q500:ps.filter(p=>p.produtoNome==='Queijo 500g').reduce((a,p)=>a+p.quantidade,0),leite:ps.filter(p=>p.produtoNome==='Leite').reduce((a,p)=>a+p.quantidade,0)}),[st]);if(loading)return <div className="center"><div>Carregando banco online...</div></div>;if(err)return <div className="center"><div><b>Erro:</b><p>{err}</p><button onClick={ref}>Tentar novamente</button></div></div>;if(!u)return <Login admins={st.admins} onLogin={x=>{localStorage.setItem('qlp_usuario',JSON.stringify(x));setU(x)}}/>;let menu:any={dash:'Dashboard',clientes:'Clientes',novo:'Novo pedido',pedidos:'Pedidos',produtos:'Produtos',sexta:'Pedidos da sexta',admins:'Administradores'};return <><aside className="menu">{Object.keys(menu).map(k=><button className={t===k?'active':''} onClick={()=>setT(k)}>{menu[k]}</button>)}</aside><header className="hero"><Logo/><div><h1>Queijos WR Pedidos</h1><p>Banco online compartilhado</p></div><button onClick={()=>{localStorage.removeItem('qlp_usuario');setU(null)}}>Sair</button></header><main className="container">{t==='dash'&&<Dash r={r}/>} {t==='clientes'&&<Clientes st={st} save={save}/>} {t==='novo'&&<Novo st={st} save={save}/>} {t==='pedidos'&&<Pedidos pedidos={st.pedidos} st={st} save={save}/>} {t==='sexta'&&<Pedidos pedidos={ps} st={st} save={save}/>} {t==='produtos'&&<Produtos st={st} save={save}/>} {t==='admins'&&<Admins st={st} save={save}/>}</main></>}
-function Login({admins,onLogin}:any){const[tel,setTel]=useState(ADM),[pin,setPin]=useState('');function entrar(){let a=admins.find((x:A)=>nums(x.telefone)===nums(tel));if(!a)return alert('Telefone nao autorizado');if(a.pin!==pin)return alert('PIN incorreto');onLogin({nome:a.nome,telefone:a.telefone,papel:'Administrador'})}return <main className="login"><section><Logo/><h1>Entrar</h1><input value={tel} onChange={e=>setTel(e.target.value)} placeholder="Celular"/><input value={pin} onChange={e=>setPin(nums(e.target.value))} placeholder="PIN" type="password"/><button onClick={entrar}>Entrar</button><small>PIN inicial: 1234</small></section></main>}
-function Dash({r}:any){return <section><h2>Dashboard</h2><div className="cards">{[['Pedidos da sexta',r.ped],['Receita',money(r.rec)],['Queijo 1kg',r.q1],['Queijo 500g',r.q500],['Leite',r.leite]].map(([a,b])=><div className="card"><span>{a}</span><b>{b}</b></div>)}</div></section>}
-function Clientes({st,save}:any){const[f,setF]=useState<any>({nome:'',telefone:'',rua:'',numero:'',bairro:'',cidade:'',estado:''});return <Panel title="Clientes"><div className="grid">{['nome','telefone','rua','numero','bairro','cidade','estado'].map(k=><input placeholder={k} value={f[k]||''} onChange={e=>setF({...f,[k]:e.target.value})}/>)}</div><button onClick={()=>{if(!f.nome)return alert('Informe nome');save('clientes',[...st.clientes,{...f,id:id(),telefone:nums(f.telefone)}]);setF({})}}>Cadastrar cliente</button><List>{st.clientes.map((c:C)=><div className="row"><b>{c.nome}</b><span>{c.telefone}</span><span>{addr(c)}</span></div>)}</List></Panel>}
-function Novo({st,save}:any){const[f,setF]=useState<any>({clienteId:'',produtoId:'',quantidade:1,tipoEntrega:'Retirada',endereco:'',dataEntrega:fri()});let c=st.clientes.find((x:C)=>x.id===f.clienteId),p=st.produtos.find((x:P)=>x.id===f.produtoId),tot=(p?.preco||0)*Number(f.quantidade||0);function add(){if(!c||!p)return alert('Selecione cliente e produto');let o:O={id:id(),codigo:'PED-'+String(st.pedidos.length+1).padStart(4,'0'),clienteId:c.id,clienteNome:c.nome,telefone:c.telefone,produtoId:p.id,produtoNome:p.nome,quantidade:Number(f.quantidade),precoUnitario:p.preco,total:tot,tipoEntrega:f.tipoEntrega,endereco:f.endereco||addr(c),formaPagamento:'Pix',statusPagamento:'Pendente',statusPedido:'Pendente',observacoes:'',dataPedido:today(),dataEntrega:f.dataEntrega};save('pedidos',[o,...st.pedidos]);alert('Pedido salvo')}return <Panel title="Novo pedido"><div className="grid"><select value={f.clienteId} onChange={e=>{let cli=st.clientes.find((x:C)=>x.id===e.target.value);setF({...f,clienteId:e.target.value,endereco:addr(cli)})}}><option value="">Cliente</option>{st.clientes.map((c:C)=><option value={c.id}>{c.nome}</option>)}</select><select value={f.produtoId} onChange={e=>setF({...f,produtoId:e.target.value})}><option value="">Produto</option>{st.produtos.map((p:P)=><option value={p.id}>{p.nome} {money(p.preco)}</option>)}</select><input type="number" value={f.quantidade} onChange={e=>setF({...f,quantidade:e.target.value})}/><input value={f.endereco} onChange={e=>setF({...f,endereco:e.target.value})}/><input type="date" value={f.dataEntrega} onChange={e=>setF({...f,dataEntrega:e.target.value})}/></div><div className="total">Total: {money(tot)}</div><button onClick={add}>Salvar pedido</button></Panel>}
-function Pedidos({pedidos,st,save}:any){return <Panel title="Pedidos"><List>{pedidos.map((p:O)=><div className="pedido"><div><b>{p.codigo}</b><h3>{p.clienteNome}</h3><p>{p.produtoNome} - {p.quantidade} - {money(p.total)}</p></div><button className="danger" onClick={()=>save('pedidos',st.pedidos.filter((x:O)=>x.id!==p.id))}>Excluir</button></div>)}</List></Panel>}
-function Produtos({st,save}:any){return <Panel title="Produtos"><List>{st.produtos.map((p:P)=><div className="row"><b>{p.nome}</b><input type="number" value={p.preco} onChange={e=>save('produtos',st.produtos.map((x:P)=>x.id===p.id?{...x,preco:Number(e.target.value)}:x))}/></div>)}</List></Panel>}
-function Admins({st,save}:any){const[f,setF]=useState({nome:'',telefone:'',pin:''});return <Panel title="Administradores"><div className="grid"><input placeholder="Nome" value={f.nome} onChange={e=>setF({...f,nome:e.target.value})}/><input placeholder="Celular" value={f.telefone} onChange={e=>setF({...f,telefone:e.target.value})}/><input placeholder="PIN" value={f.pin} onChange={e=>setF({...f,pin:nums(e.target.value)})}/></div><button onClick={()=>save('admins',[...st.admins,{id:id(),nome:f.nome,telefone:nums(f.telefone),pin:f.pin,papel:'Administrador'}])}>Adicionar</button><List>{st.admins.map((a:A)=><div className="row"><b>{a.nome}</b><span>{a.telefone}</span><span>{a.papel}</span></div>)}</List></Panel>}
-function Panel(p:any){return <section className="panel"><h2>{p.title}</h2>{p.children}</section>}function List(p:any){return <div className="list">{p.children}</div>}
+import React, { useEffect, useMemo, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import './styles.css';
+import { ADMIN_PRINCIPAL, Admin, Cliente, Pedido, Produto, address, deleteRow, insertRow, loadAll, money, nextFriday, nums, today, uid, updateRow } from './dbReal';
+
+type Usuario = { nome: string; telefone: string; papel: string } | null;
+
+function Marca() {
+  return <div className="marca"><b>Queijos WR</b><small>Sabor e tradição</small></div>;
+}
+
+function App() {
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [pedidos, setPedidos] = useState<Pedido[]>([]);
+  const [admins, setAdmins] = useState<Admin[]>([]);
+  const [usuario, setUsuario] = useState<Usuario>(() => JSON.parse(localStorage.getItem('qlp_usuario') || 'null'));
+  const [tela, setTela] = useState('dash');
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState('');
+
+  async function carregar() {
+    try {
+      const dados = await loadAll();
+      setClientes(dados.clientes);
+      setProdutos(dados.produtos);
+      setPedidos(dados.pedidos);
+      setAdmins(dados.admins);
+      setErro('');
+    } catch (e: any) {
+      setErro(e?.message || 'Erro ao acessar o banco online.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function inserir(tabela: string, linha: any) {
+    try { await insertRow(tabela, linha); await carregar(); }
+    catch (e: any) { alert('Erro ao salvar: ' + (e?.message || 'erro desconhecido')); }
+  }
+  async function atualizar(tabela: string, id: string, linha: any) {
+    try { await updateRow(tabela, id, linha); await carregar(); }
+    catch (e: any) { alert('Erro ao atualizar: ' + (e?.message || 'erro desconhecido')); }
+  }
+  async function excluir(tabela: string, id: string) {
+    try { await deleteRow(tabela, id); await carregar(); }
+    catch (e: any) { alert('Erro ao excluir: ' + (e?.message || 'erro desconhecido')); }
+  }
+
+  useEffect(() => {
+    carregar();
+    const id = setInterval(carregar, 8000);
+    return () => clearInterval(id);
+  }, []);
+
+  const pedidosSexta = pedidos.filter(p => p.data_entrega === nextFriday());
+  const resumo = useMemo(() => ({
+    pedidos: pedidosSexta.length,
+    receita: pedidosSexta.reduce((s, p) => s + p.total, 0),
+    q1: pedidosSexta.filter(p => p.produto_nome === 'Queijo 1kg').reduce((s, p) => s + p.quantidade, 0),
+    q500: pedidosSexta.filter(p => p.produto_nome === 'Queijo 500g').reduce((s, p) => s + p.quantidade, 0),
+    leite: pedidosSexta.filter(p => p.produto_nome === 'Leite').reduce((s, p) => s + p.quantidade, 0),
+  }), [pedidos]);
+
+  if (loading) return <div className="center"><div>Carregando banco online...</div></div>;
+  if (erro) return <div className="center"><div><b>Erro no banco</b><p>{erro}</p><button onClick={carregar}>Tentar novamente</button></div></div>;
+  if (!usuario) return <Login admins={admins} onLogin={(u: Usuario) => { localStorage.setItem('qlp_usuario', JSON.stringify(u)); setUsuario(u); }} />;
+
+  const menu: any = { dash: 'Dashboard', clientes: 'Clientes', novo: 'Novo pedido', pedidos: 'Pedidos', produtos: 'Produtos', sexta: 'Pedidos da sexta', admins: 'Administradores' };
+  return <>
+    <aside className="menu">{Object.keys(menu).map(k => <button key={k} className={tela === k ? 'active' : ''} onClick={() => setTela(k)}>{menu[k]}</button>)}</aside>
+    <header className="hero"><Marca/><div><h1>Queijos WR Pedidos</h1><p>Sistema online com tabelas reais no Supabase</p></div><button onClick={() => { localStorage.removeItem('qlp_usuario'); setUsuario(null); }}>Sair</button></header>
+    <main className="container">
+      {tela === 'dash' && <Dashboard r={resumo}/>} {tela === 'clientes' && <Clientes clientes={clientes} inserir={inserir}/>} {tela === 'novo' && <Novo clientes={clientes} produtos={produtos} pedidos={pedidos} inserir={inserir}/>} {tela === 'pedidos' && <Pedidos pedidos={pedidos} atualizar={atualizar} excluir={excluir}/>} {tela === 'sexta' && <Pedidos pedidos={pedidosSexta} atualizar={atualizar} excluir={excluir}/>} {tela === 'produtos' && <Produtos produtos={produtos} atualizar={atualizar}/>} {tela === 'admins' && <Admins admins={admins} inserir={inserir}/>} 
+    </main>
+  </>;
+}
+
+function Login({ admins, onLogin }: any) {
+  const [tel, setTel] = useState(ADMIN_PRINCIPAL), [pin, setPin] = useState('');
+  function entrar() { const a = admins.find((x: Admin) => nums(x.telefone) === nums(tel)); if (!a) return alert('Telefone não autorizado'); if (a.pin !== pin) return alert('PIN incorreto'); onLogin({ nome: a.nome, telefone: a.telefone, papel: a.papel }); }
+  return <main className="login"><section><Marca/><h1>Entrar</h1><input value={tel} onChange={e => setTel(e.target.value)} placeholder="Celular com DDD"/><input value={pin} onChange={e => setPin(nums(e.target.value))} placeholder="PIN" type="password"/><button onClick={entrar}>Entrar</button><small>PIN inicial: 1234</small></section></main>;
+}
+function Dashboard({ r }: any) { return <section><h2>Dashboard</h2><div className="cards">{[['Pedidos da sexta', r.pedidos], ['Receita', money(r.receita)], ['Queijo 1kg', r.q1], ['Queijo 500g', r.q500], ['Leite', r.leite]].map(([a,b]) => <div className="card" key={String(a)}><span>{a}</span><b>{b}</b></div>)}</div></section>; }
+function Clientes({ clientes, inserir }: any) { const [f, setF] = useState<any>({}); return <Panel title="Clientes"><div className="grid">{['nome','telefone','rua','numero','bairro','cidade','estado'].map(k => <input key={k} placeholder={k} value={f[k] || ''} onChange={e => setF({...f,[k]:e.target.value})}/>)}</div><button onClick={() => { if (!f.nome) return alert('Informe o nome'); inserir('qlp_clientes', {...f, id: uid(), telefone: nums(f.telefone)}); setF({}); }}>Cadastrar cliente</button><List>{clientes.map((c: Cliente) => <div className="row" key={c.id}><b>{c.nome}</b><span>{c.telefone}</span><span>{address(c)}</span></div>)}</List></Panel>; }
+function Novo({ clientes, produtos, pedidos, inserir }: any) { const [f,setF]=useState<any>({cliente_id:'',produto_id:'',quantidade:1,endereco:'',data_entrega:nextFriday()}); const c=clientes.find((x:Cliente)=>x.id===f.cliente_id), p=produtos.find((x:Produto)=>x.id===f.produto_id), total=(p?.preco||0)*Number(f.quantidade||0); function add(){ if(!c||!p) return alert('Selecione cliente e produto'); inserir('qlp_pedidos',{id:uid(),codigo:'PED-'+String(pedidos.length+1).padStart(4,'0'),cliente_id:c.id,cliente_nome:c.nome,telefone:c.telefone,produto_id:p.id,produto_nome:p.nome,quantidade:Number(f.quantidade),preco_unitario:p.preco,total,tipo_entrega:'Retirada',endereco:f.endereco||address(c),forma_pagamento:'Pix',status_pagamento:'Pendente',status_pedido:'Pendente',observacoes:'',data_pedido:today(),data_entrega:f.data_entrega}); alert('Pedido salvo no banco online'); } return <Panel title="Novo pedido"><div className="grid"><select value={f.cliente_id} onChange={e=>{const cli=clientes.find((x:Cliente)=>x.id===e.target.value);setF({...f,cliente_id:e.target.value,endereco:address(cli)})}}><option value="">Cliente</option>{clientes.map((c:Cliente)=><option key={c.id} value={c.id}>{c.nome}</option>)}</select><select value={f.produto_id} onChange={e=>setF({...f,produto_id:e.target.value})}><option value="">Produto</option>{produtos.filter((p:Produto)=>p.ativo).map((p:Produto)=><option key={p.id} value={p.id}>{p.nome} {money(p.preco)}</option>)}</select><input type="number" value={f.quantidade} onChange={e=>setF({...f,quantidade:e.target.value})}/><input value={f.endereco} onChange={e=>setF({...f,endereco:e.target.value})} placeholder="Endereço"/><input type="date" value={f.data_entrega} onChange={e=>setF({...f,data_entrega:e.target.value})}/></div><div className="total">Total: {money(total)}</div><button onClick={add}>Salvar pedido</button></Panel>; }
+function Pedidos({ pedidos, atualizar, excluir }: any) { return <Panel title="Pedidos"><List>{pedidos.map((p: Pedido) => <div className="pedido" key={p.id}><div><b>{p.codigo}</b><h3>{p.cliente_nome}</h3><p>{p.produto_nome} - {p.quantidade} - {money(p.total)}</p><p>{p.endereco}</p></div><div><select value={p.status_pedido} onChange={e => atualizar('qlp_pedidos', p.id, {status_pedido:e.target.value})}><option>Pendente</option><option>Recebido</option><option>Separado</option><option>Saiu para entrega</option><option>Entregue</option><option>Cancelado</option></select><select value={p.status_pagamento} onChange={e => atualizar('qlp_pedidos', p.id, {status_pagamento:e.target.value})}><option>Pendente</option><option>Pago</option><option>Parcial</option></select><button className="danger" onClick={() => excluir('qlp_pedidos', p.id)}>Excluir</button></div></div>)}</List></Panel>; }
+function Produtos({ produtos, atualizar }: any) { return <Panel title="Produtos"><List>{produtos.map((p: Produto) => <div className="row" key={p.id}><b>{p.nome}</b><input type="number" value={p.preco} onChange={e => atualizar('qlp_produtos', p.id, {preco:Number(e.target.value)})}/><label><input type="checkbox" checked={p.ativo} onChange={e => atualizar('qlp_produtos', p.id, {ativo:e.target.checked})}/> Ativo</label></div>)}</List></Panel>; }
+function Admins({ admins, inserir }: any) { const [f,setF]=useState({nome:'',telefone:'',pin:''}); return <Panel title="Administradores"><div className="grid"><input placeholder="Nome" value={f.nome} onChange={e=>setF({...f,nome:e.target.value})}/><input placeholder="Celular" value={f.telefone} onChange={e=>setF({...f,telefone:e.target.value})}/><input placeholder="PIN" value={f.pin} onChange={e=>setF({...f,pin:nums(e.target.value)})}/></div><button onClick={()=>{ if(!f.nome||!f.telefone||f.pin.length<4) return alert('Preencha nome, telefone e PIN'); inserir('qlp_admins',{id:uid(),nome:f.nome,telefone:nums(f.telefone),pin:f.pin,papel:'Administrador'}); setF({nome:'',telefone:'',pin:''}); }}>Adicionar</button><List>{admins.map((a:Admin)=><div className="row" key={a.id}><b>{a.nome}</b><span>{a.telefone}</span><span>{a.papel}</span></div>)}</List></Panel>; }
+function Panel(p:any){return <section className="panel"><h2>{p.title}</h2>{p.children}</section>} function List(p:any){return <div className="list">{p.children}</div>}
 createRoot(document.getElementById('root')!).render(<App/>);
