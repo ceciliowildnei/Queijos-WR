@@ -4,11 +4,10 @@ import { createClient } from '@supabase/supabase-js';
 import './style.css';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ywwztahbqgiwervbwudg.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJIUzI1NiIsInJlZiI6Inl3d3p0YWhicWdpd2VydmJ3dWRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMjU1ODMsImV4cCI6MjA5NDYwMTU4M30.kzOjAWiu19zH4IzgBxGAVm31beNNilbYsVs97aGB2Zo';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3d3p0YWhicWdpd2VydmJ3dWRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMjU1ODMsImV4cCI6MjA5NDYwMTU4M30.kzOjAWiu19zH4IzgBxGAVm31beNNilbYsVs97aGB2Zo';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const hojeISO = () => new Date().toISOString().slice(0, 10);
 const proxSexta = () => {
   const d = new Date();
   const day = d.getDay();
