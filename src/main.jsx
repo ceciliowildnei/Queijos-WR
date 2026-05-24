@@ -1,151 +1,55 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createRoot } from 'react-dom/client';
-import { createClient } from '@supabase/supabase-js';
-import './style.css';
+import React,{useEffect,useMemo,useState}from'react';
+import{createRoot}from'react-dom/client';
+import{createClient}from'@supabase/supabase-js';
+import'./style.css';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ywwztahbqgiwervbwudg.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3d3p0YWhicWdpd2VydmJ3dWRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMjU1ODMsImV4cCI6MjA5NDYwMTU4M30.kzOjAWiu19zH4IzgBxGAVm31beNNilbYsVs97aGB2Zo';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase=createClient('https://ywwztahbqgiwervbwudg.supabase.co','sb_publishable_er0Z1O0s1opKniqu3cYkGg_svVBvXRx');
+const brl=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const tel=v=>String(v||'').replace(/\D/g,'');
+const dataBR=v=>v?String(v).slice(0,10).split('-').reverse().join('/'):'-';
+const produtosPadrao=['Leite','Queijo grande','Queijo de meio quilo','Queijo 500g','Queijo 1kg'];
+const menu=[['dashboard','⌂','Dashboard'],['clientes','♙','Clientes'],['produtos','◇','Produtos'],['pedidos','▣','Pedidos'],['entregas','▰','Entregas'],['relatorios','▥','Relatórios']];
+function hoje(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}
+function addDias(data,dias){let[y,m,d]=String(data).slice(0,10).split('-').map(Number);let dt=new Date(Date.UTC(y,m-1,d+dias,12));return dt.toISOString().slice(0,10)}
+function diaSemana(data){let[y,m,d]=String(data).slice(0,10).split('-').map(Number);return new Date(Date.UTC(y,m-1,d,12)).getUTCDay()}
+function proxSexta(){let dias=(5-diaSemana(hoje())+7)%7;if(dias===0)dias=7;return addDias(hoje(),dias)}
+function inicioSemana(){return addDias(hoje(),-((diaSemana(hoje())+6)%7))}
+function fimSemana(){return addDias(inicioSemana(),6)}
+function endereco(c={}){return [c.rua,c.numero,c.bairro,c.cidade,c.estado].filter(Boolean).join(', ')}
+function soma(a,k){return a.reduce((s,x)=>s+Number(x[k]||0),0)}
+function filtro(a,b){return a.filter(x=>JSON.stringify(x).toLowerCase().includes((b||'').toLowerCase()))}
+function isQueijo(p){return String(p.produto_nome||p.nome||'').toLowerCase().includes('queijo')}
+function pedidosDaEntrega(pedidos,data){return pedidos.filter(p=>String(p.data_entrega||'').slice(0,10)===data&&isQueijo(p))}
+function agruparPorData(pedidos){return [...pedidos].sort((a,b)=>String(a.data_entrega).localeCompare(String(b.data_entrega))).reduce((g,p)=>{let k=String(p.data_entrega||'').slice(0,10)||'Sem data';(g[k]||(g[k]=[])).push(p);return g},{})}
+function limpar(obj){let o={...obj};if(!o.id)delete o.id;Object.keys(o).forEach(k=>o[k]===undefined&&delete o[k]);return o}
 
-const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const proxSexta = () => {
-  const d = new Date();
-  const day = d.getDay();
-  let diff = (5 - day + 7) % 7;
-  if (diff === 0) diff = 7;
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
-};
-const tel = (v) => String(v || '').replace(/\D/g, '');
-
-function App() {
-  const [admin, setAdmin] = useState(null);
-  const [login, setLogin] = useState({ telefone: '', pin: '' });
-  const [erro, setErro] = useState('');
-  const [msg, setMsg] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [clientes, setClientes] = useState([]);
-  const [produtos, setProdutos] = useState([]);
-  const [pedidos, setPedidos] = useState([]);
-  const [aba, setAba] = useState('dashboard');
-  const lastCount = useRef(0);
-
-  const [clienteForm, setClienteForm] = useState({ nome: '', telefone: '', cep: '', rua: '', numero: '', bairro: '', cidade: '', estado: '', complemento: '', observacoes: '' });
-  const [produtoForm, setProdutoForm] = useState({ nome: '', unidade: 'unidade', preco: '' });
-  const [pedidoForm, setPedidoForm] = useState({ cliente_id: '', produto_id: '', quantidade: 1, tipo_entrega: 'Retirada', forma_pagamento: 'Pix', status_pagamento: 'Pendente', status_pedido: 'Pendente', data_entrega: proxSexta(), observacoes: '' });
-
-  async function entrar(e) {
-    e.preventDefault();
-    setErro('');
-    setLoading(true);
-    const { data, error } = await supabase.from('wr_admins').select('*').eq('telefone', tel(login.telefone)).eq('pin', login.pin).eq('ativo', true).maybeSingle();
-    setLoading(false);
-    if (error || !data) return setErro('Celular ou PIN inválido. Confira os dados e tente novamente.');
-    setAdmin(data);
-  }
-
-  async function carregar(silencioso = false) {
-    if (!silencioso) setLoading(true);
-    setErro('');
-    const [c, p, o] = await Promise.all([
-      supabase.from('wr_clientes').select('*').order('criado_em', { ascending: false }),
-      supabase.from('wr_produtos').select('*').order('nome'),
-      supabase.from('wr_pedidos').select('*').order('criado_em', { ascending: false })
-    ]);
-    if (c.error || p.error || o.error) setErro('Não foi possível sincronizar com o Supabase.');
-    else {
-      setClientes(c.data || []); setProdutos(p.data || []); setPedidos(o.data || []);
-      if (lastCount.current && (o.data || []).length > lastCount.current) beep();
-      lastCount.current = (o.data || []).length;
-      if (!silencioso) setMsg('Dados sincronizados com o Supabase.');
-    }
-    if (!silencioso) setLoading(false);
-  }
-
-  useEffect(() => {
-    if (!admin) return;
-    carregar(true);
-    const channel = supabase.channel('wr-pedidos-tempo-real')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'wr_pedidos' }, () => carregar(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'wr_clientes' }, () => carregar(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'wr_produtos' }, () => carregar(true))
-      .subscribe();
-    return () => supabase.removeChannel(channel);
-  }, [admin]);
-
-  function beep() {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination); osc.frequency.value = 880; gain.gain.value = 0.04; osc.start(); osc.stop(ctx.currentTime + 0.18);
-    } catch {}
-  }
-
-  async function salvarCliente(e) {
-    e.preventDefault(); setLoading(true);
-    const { error } = await supabase.from('wr_clientes').insert([{ ...clienteForm, telefone: tel(clienteForm.telefone) }]);
-    setLoading(false); if (error) return setErro(error.message);
-    setClienteForm({ nome: '', telefone: '', cep: '', rua: '', numero: '', bairro: '', cidade: '', estado: '', complemento: '', observacoes: '' });
-    setMsg('Cliente cadastrado no Supabase.'); carregar(true);
-  }
-
-  async function salvarProduto(e) {
-    e.preventDefault(); setLoading(true);
-    const { error } = await supabase.from('wr_produtos').insert([{ nome: produtoForm.nome, unidade: produtoForm.unidade, preco: Number(produtoForm.preco || 0), ativo: true }]);
-    setLoading(false); if (error) return setErro(error.message);
-    setProdutoForm({ nome: '', unidade: 'unidade', preco: '' }); setMsg('Produto cadastrado no Supabase.'); carregar(true);
-  }
-
-  async function salvarPedido(e) {
-    e.preventDefault(); setLoading(true);
-    const cliente = clientes.find(x => x.id === pedidoForm.cliente_id);
-    const produto = produtos.find(x => x.id === pedidoForm.produto_id);
-    if (!cliente || !produto) { setLoading(false); return setErro('Selecione cliente e produto.'); }
-    const qtd = Number(pedidoForm.quantidade || 1);
-    const preco = Number(produto.preco || 0);
-    const endereco = [cliente.rua, cliente.numero, cliente.bairro, cliente.cidade, cliente.estado].filter(Boolean).join(', ');
-    const { error } = await supabase.from('wr_pedidos').insert([{ ...pedidoForm, cliente_nome: cliente.nome, cliente_telefone: cliente.telefone, produto_nome: produto.nome, quantidade: qtd, preco_unitario: preco, total: qtd * preco, endereco }]);
-    setLoading(false); if (error) return setErro(error.message);
-    setPedidoForm({ cliente_id: '', produto_id: '', quantidade: 1, tipo_entrega: 'Retirada', forma_pagamento: 'Pix', status_pagamento: 'Pendente', status_pedido: 'Pendente', data_entrega: proxSexta(), observacoes: '' });
-    setMsg('Pedido criado no Supabase.'); beep(); carregar(true); setAba('pedidos');
-  }
-
-  async function atualizarPedido(id, campo, valor) {
-    const { error } = await supabase.from('wr_pedidos').update({ [campo]: valor }).eq('id', id);
-    if (error) setErro(error.message); else carregar(true);
-  }
-
-  const resumo = useMemo(() => {
-    const total = pedidos.reduce((s, p) => s + Number(p.total || 0), 0);
-    const pendentes = pedidos.filter(p => p.status_pedido !== 'Entregue').length;
-    const prox = proxSexta();
-    return { total, pendentes, sexta: pedidos.filter(p => p.data_entrega === prox) };
-  }, [pedidos]);
-
-  if (!admin) return <Login login={login} setLogin={setLogin} entrar={entrar} erro={erro} loading={loading} />;
-
-  return <div className="app">
-    <header className="topo">
-      <div className="brand"><div className="logo">Queijos <b>WR</b></div><span>Pedidos artesanais</span></div>
-      <div className="top-actions"><button onClick={() => carregar()} disabled={loading}>Atualizar / sincronizar</button><button onClick={() => setAdmin(null)}>Sair</button></div>
-    </header>
-    <nav className="tabs">{['dashboard','clientes','produtos','novo pedido','pedidos','sexta'].map(x => <button key={x} className={aba===x?'on':''} onClick={() => setAba(x)}>{x}</button>)}</nav>
-    {(erro || msg) && <div className={erro ? 'alert erro' : 'alert'}>{erro || msg}</div>}
-    {aba === 'dashboard' && <section className="grid cards"><Card t="Pedidos" v={pedidos.length}/><Card t="A receber" v={dinheiro(resumo.total)}/><Card t="Pendentes" v={resumo.pendentes}/><Card t="Próxima sexta" v={resumo.sexta.length}/></section>}
-    {aba === 'clientes' && <Clientes form={clienteForm} setForm={setClienteForm} salvar={salvarCliente} clientes={clientes}/>} 
-    {aba === 'produtos' && <Produtos form={produtoForm} setForm={setProdutoForm} salvar={salvarProduto} produtos={produtos}/>} 
-    {aba === 'novo pedido' && <NovoPedido form={pedidoForm} setForm={setPedidoForm} salvar={salvarPedido} clientes={clientes} produtos={produtos}/>} 
-    {aba === 'pedidos' && <ListaPedidos pedidos={pedidos} atualizar={atualizarPedido}/>} 
-    {aba === 'sexta' && <ListaPedidos pedidos={resumo.sexta} atualizar={atualizarPedido} titulo={'Pedidos da próxima sexta-feira: ' + proxSexta()}/>} 
-  </div>;
-}
-
-function Login({ login, setLogin, entrar, erro, loading }) { return <main className="login"><section className="login-card"><div className="marca">Queijos <b>WR</b></div><h1>Queijos WR Pedidos</h1><p>Sistema online para pedidos de queijo e leite.</p><form onSubmit={entrar}><input placeholder="Celular" value={login.telefone} onChange={e=>setLogin({...login, telefone:e.target.value})}/><input placeholder="PIN" type="password" value={login.pin} onChange={e=>setLogin({...login, pin:e.target.value})}/><button disabled={loading}>{loading?'Entrando...':'Entrar'}</button>{erro && <div className="alert erro">{erro}</div>}</form></section></main> }
-function Card({t,v}) { return <article className="card"><span>{t}</span><strong>{v}</strong></article> }
-function Clientes({form,setForm,salvar,clientes}) { return <section className="grid"><form className="panel" onSubmit={salvar}><h2>Cadastrar cliente</h2>{['nome','telefone','cep','rua','numero','bairro','cidade','estado','complemento','observacoes'].map(k=><input key={k} required={k==='nome'} placeholder={k} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/>)}<button>Salvar cliente</button></form><div className="panel"><h2>Clientes</h2>{clientes.map(c=><p className="linha" key={c.id}><b>{c.nome}</b><br/>{c.telefone || 'sem telefone'} - {[c.rua,c.numero,c.bairro].filter(Boolean).join(', ')}</p>)}</div></section> }
-function Produtos({form,setForm,salvar,produtos}) { return <section className="grid"><form className="panel" onSubmit={salvar}><h2>Cadastrar produto</h2><input required placeholder="nome" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/><input placeholder="unidade" value={form.unidade} onChange={e=>setForm({...form,unidade:e.target.value})}/><input placeholder="preço" type="number" step="0.01" value={form.preco} onChange={e=>setForm({...form,preco:e.target.value})}/><button>Salvar produto</button></form><div className="panel"><h2>Produtos</h2>{produtos.map(p=><p className="linha" key={p.id}><b>{p.nome}</b><br/>{p.unidade} - {dinheiro(p.preco)}</p>)}</div></section> }
-function NovoPedido({form,setForm,salvar,clientes,produtos}) { return <form className="panel wide" onSubmit={salvar}><h2>Lançar pedido</h2><select required value={form.cliente_id} onChange={e=>setForm({...form,cliente_id:e.target.value})}><option value="">Cliente</option>{clientes.map(c=><option value={c.id} key={c.id}>{c.nome}</option>)}</select><select required value={form.produto_id} onChange={e=>setForm({...form,produto_id:e.target.value})}><option value="">Produto</option>{produtos.filter(p=>p.ativo).map(p=><option value={p.id} key={p.id}>{p.nome} - {dinheiro(p.preco)}</option>)}</select><input type="number" step="0.01" min="0.01" value={form.quantidade} onChange={e=>setForm({...form,quantidade:e.target.value})}/><select value={form.tipo_entrega} onChange={e=>setForm({...form,tipo_entrega:e.target.value})}><option>Retirada</option><option>Entrega</option></select><select value={form.forma_pagamento} onChange={e=>setForm({...form,forma_pagamento:e.target.value})}><option>Pix</option><option>Dinheiro</option><option>Cartão</option><option>A combinar</option></select><select value={form.status_pagamento} onChange={e=>setForm({...form,status_pagamento:e.target.value})}><option>Pendente</option><option>Pago</option></select><select value={form.status_pedido} onChange={e=>setForm({...form,status_pedido:e.target.value})}><option>Pendente</option><option>Separado</option><option>Entregue</option><option>Cancelado</option></select><input type="date" value={form.data_entrega} onChange={e=>setForm({...form,data_entrega:e.target.value})}/><textarea placeholder="observações" value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})}/><button>Criar pedido</button></form> }
-function ListaPedidos({pedidos, atualizar, titulo='Lista de pedidos'}) { return <section className="panel wide"><h2>{titulo}</h2>{pedidos.length===0 && <p>Nenhum pedido encontrado.</p>}{pedidos.map(p=><article className="pedido" key={p.id}><div><b>{p.codigo}</b> - {p.cliente_nome}<br/><span>{p.produto_nome} x {p.quantidade} = {dinheiro(p.total)} | entrega: {p.data_entrega || '-'}</span><br/><small>{p.tipo_entrega} | {p.forma_pagamento} | {p.endereco}</small></div><div className="status"><select value={p.status_pedido} onChange={e=>atualizar(p.id,'status_pedido',e.target.value)}><option>Pendente</option><option>Separado</option><option>Entregue</option><option>Cancelado</option></select><select value={p.status_pagamento} onChange={e=>atualizar(p.id,'status_pagamento',e.target.value)}><option>Pendente</option><option>Pago</option></select></div></article>)}</section> }
-
-createRoot(document.getElementById('root')).render(<App />);
+function App(){
+ const[admin,setAdmin]=useState(null),[login,setLogin]=useState({telefone:'',pin:''}),[erro,setErro]=useState(''),[msg,setMsg]=useState(''),[load,setLoad]=useState(false),[aba,setAba]=useState('entregas'),[busca,setBusca]=useState(''),[modal,setModal]=useState(null),[dataEntrega,setDataEntrega]=useState(proxSexta());
+ const[d,setD]=useState({clientes:[],produtos:[],pedidos:[],admins:[]});
+ const st=useMemo(()=>{let fat=soma(d.pedidos,'total'),sem=d.pedidos.filter(p=>p.data_entrega>=inicioSemana()&&p.data_entrega<=fimSemana()),prod=pedidosDaEntrega(d.pedidos,dataEntrega).filter(p=>p.status_pedido!=='Entregue');return{fat,fatSem:soma(sem,'total'),prod:soma(prod,'quantidade'),ped:d.pedidos.length,pend:prod.length,pgp:d.pedidos.filter(p=>p.status_pagamento!=='Pago').length}},[d,dataEntrega]);
+ useEffect(()=>{if(!admin)return;sync(true);const ch=supabase.channel('wr-sync').on('postgres_changes',{event:'*',schema:'public',table:'wr_clientes'},()=>sync(true)).on('postgres_changes',{event:'*',schema:'public',table:'wr_produtos'},()=>sync(true)).on('postgres_changes',{event:'*',schema:'public',table:'wr_pedidos'},()=>sync(true)).on('postgres_changes',{event:'*',schema:'public',table:'wr_admins'},()=>sync(true)).subscribe();return()=>supabase.removeChannel(ch)},[admin]);
+ async function entrar(e){e.preventDefault();setErro('');setLoad(true);let{data,error}=await supabase.from('wr_admins').select('*').eq('telefone',tel(login.telefone)).eq('pin',String(login.pin||'').trim()).eq('ativo',true).maybeSingle();setLoad(false);if(error)return setErro(error.message);if(!data)return setErro('Celular ou PIN inválido.');setAdmin(data);setMsg('Bem-vindo, '+data.nome+'.')}
+ async function sync(silent=false){if(!silent)setLoad(true);let[c,p,o,a]=await Promise.all([supabase.from('wr_clientes').select('*').order('criado_em',{ascending:false}),supabase.from('wr_produtos').select('*').order('nome'),supabase.from('wr_pedidos').select('*').order('data_entrega',{ascending:true}),supabase.from('wr_admins').select('*')]);if(c.error||p.error||o.error||a.error)setErro(c.error?.message||p.error?.message||o.error?.message||a.error?.message);else{setD({clientes:c.data||[],produtos:p.data||[],pedidos:o.data||[],admins:a.data||[]});if(!silent)setMsg('Sincronizado com o banco de dados.')}if(!silent)setLoad(false)}
+ async function save(t,obj){setErro('');let tb={clientes:'wr_clientes',produtos:'wr_produtos',pedidos:'wr_pedidos',admins:'wr_admins'}[t];let item=limpar(obj);let r=item.id?await supabase.from(tb).update(item).eq('id',item.id):await supabase.from(tb).insert([item]);if(r.error)setErro(r.error.message);else{setModal(null);setMsg('Salvo com sucesso.');sync(true)}}
+ async function del(t,id){if(!confirm('Excluir este registro?'))return;let tb={clientes:'wr_clientes',produtos:'wr_produtos',pedidos:'wr_pedidos',admins:'wr_admins'}[t];let r=await supabase.from(tb).delete().eq('id',id);if(r.error)setErro(r.error.message);else{setMsg('Excluído.');sync(true)}}
+ async function statusPedido(id,campo,valor){await supabase.from('wr_pedidos').update({[campo]:valor}).eq('id',id);sync(true)}
+ if(!admin)return <Login login={login} setLogin={setLogin} entrar={entrar} erro={erro} load={load}/>;
+ return <><div className="app"><aside><div className="brand-logo"><img src="/logo-app.svg" alt="Queijos WR"/></div><div className="farm-art"/><nav className="menu">{menu.concat(admin.papel==='ADM Geral'?[['admins','⚙','ADM']]:[]).map(([id,ico,t])=><button key={id} className={aba===id?'active':''} onClick={()=>setAba(id)}><i>{ico}</i>{t}</button>)}</nav><div className="sidebar-foot">“ Tradição que vem da nossa família para a sua. ”<br/><small>Queijos WR Pedidos</small></div></aside><main><div className="top"><div className="title-row"><span className="hamb">☰</span><div><h1>{label(aba)}</h1><p>{sub(aba)}</p></div></div><div className="top-actions"><label className="delivery-date-picker"><span>Data da entrega</span><input type="date" value={dataEntrega} onChange={e=>setDataEntrega(e.target.value||proxSexta())}/></label><button className="sync" onClick={()=>sync(false)}>{load?'Sincronizando...':'Atualizar / Sincronizar'}</button><button className="ghost" onClick={()=>setAdmin(null)}>Sair</button><span className="avatar">WR</span></div></div>{msg&&<p className="ok">{msg}</p>}{erro&&<p className="err">{erro}</p>}{aba==='entregas'&&<Entregas d={d} busca={busca} setBusca={setBusca} statusPedido={statusPedido} dataEntrega={dataEntrega}/>} {aba==='dashboard'&&<Dashboard d={d} st={st} dataEntrega={dataEntrega}/>} {aba==='clientes'&&<Clientes d={d} busca={busca} setBusca={setBusca} setModal={setModal} del={del}/>} {aba==='produtos'&&<Produtos d={d} setModal={setModal} del={del}/>} {aba==='pedidos'&&<Pedidos d={d} st={st} busca={busca} setBusca={setBusca} setModal={setModal} del={del} statusPedido={statusPedido}/>} {aba==='relatorios'&&<Relatorio d={d} dataEntrega={dataEntrega}/>} {aba==='admins'&&<Admins d={d} setModal={setModal} del={del}/>}</main></div>{modal&&<Forms modal={modal} d={d} save={save} close={()=>setModal(null)} dataEntrega={dataEntrega}/>}</>}
+function Login({login,setLogin,entrar,erro,load}){return <div className="login"><div className="login-card"><h1>Acesso Administrativo</h1><form onSubmit={entrar}><input placeholder="Celular" value={login.telefone} onChange={e=>setLogin({...login,telefone:e.target.value})}/><input placeholder="PIN" type="password" value={login.pin} onChange={e=>setLogin({...login,pin:e.target.value})}/><button>{load?'Entrando...':'Entrar / Sincronizar'}</button>{erro&&<p className="err">{erro}</p>}</form></div></div>}
+function label(a){return{dashboard:'Dashboard / Resumo',clientes:'Clientes',produtos:'Produtos',pedidos:'Pedidos',entregas:'Entregas',relatorios:'Relatórios',admins:'ADM'}[a]||a}
+function sub(a){return{dashboard:'Visão geral da data de entrega selecionada.',clientes:'Cadastre, edite e acompanhe seus clientes.',produtos:'Catálogo de produtos.',pedidos:'Pedidos separados por data de entrega.',entregas:'Queijos da data de entrega selecionada.',relatorios:'Produção por produto e cliente.',admins:'Gerencie acessos administrativos.'}[a]}
+function Entregas({d,busca,setBusca,statusPedido,dataEntrega}){let base=pedidosDaEntrega(d.pedidos,dataEntrega),pedidos=filtro(base,busca),all=pedidos.filter(p=>p.status_pedido!=='Entregue');let grupos=[['Rota 01 - Zona Rural',all.filter(p=>(p.endereco||'').toLowerCase().includes('zona rural')||p.tipo_entrega==='Entrega').slice(0,5)],['Rota 02 - Centro',all.filter(p=>(p.endereco||'').toLowerCase().includes('centro')).slice(0,3)],['Rota 03 - Vila Nova',all.filter(p=>(p.endereco||'').toLowerCase().includes('vila')).slice(0,2)]];return <><div className="filters"><div className="filter">▣ Entrega - {dataBR(dataEntrega)}</div><div className="filter">⌘ Todas as rotas</div><div className="filter">⌕ <input placeholder="Buscar queijo ou cliente..." value={busca} onChange={e=>setBusca(e.target.value)}/></div></div><div className="entregas-layout"><section className="entregas-main">{grupos.map(([nome,arr],gi)=><div className="route-card" key={nome}><div className="route-head"><div className="route-title">♙ {nome}<small>{arr.length} entregas</small></div><div className="route-total">Total da rota: {brl(soma(arr,'total'))}</div></div>{(arr.length?arr:all.slice(gi*3,gi*3+3)).map((p,i)=><div className="delivery-row" key={p.id}><div className="num">{i+1}</div><div>{p.hora||['08:30','09:30','10:30','11:30','14:00'][i]||'09:00'}</div><div className="client"><strong>{p.cliente_nome}</strong><small>{p.endereco||'Sítio Santo Antônio'}</small></div><div className="pedido-info"><strong>{p.codigo}</strong><small>{p.quantidade||1} itens</small></div><div><span className="tag">{p.produto_nome}</span></div><strong>{brl(p.total)}</strong><span className={'status '+(p.status_pedido==='Entregue'?'status-green':p.status_pedido==='Saiu para entrega'?'status-orange':'status-blue')}>{p.status_pedido||'Separado'}</span><button className="view-btn" onClick={()=>statusPedido(p.id,'status_pedido','Entregue')}>Entregue</button></div>)}{!arr.length&&gi===0&&!all.length&&<p className="empty">Nenhum queijo para entrega em {dataBR(dataEntrega)}.</p>}</div>)}</section><aside className="side-stack"><div className="panel"><h3>Resumo da entrega - {dataBR(dataEntrega)}</h3><div className="summary-grid"><div className="summary-tile"><span className="circle">▰</span><div><small>Queijos do dia</small><b>{all.length}</b></div></div><div className="summary-tile"><span className="circle">▣</span><div><small>Quantidade</small><b>{soma(all,'quantidade')}</b></div></div><div className="summary-tile"><span className="circle">$</span><div><small>Valor</small><b className="money">{brl(soma(all,'total'))}</b></div></div><div className="summary-tile"><span className="circle">↗</span><div><small>Produção</small><b className="money">{soma(all,'quantidade')}</b></div></div></div></div><div className="panel"><h3>Ações rápidas</h3>{['✓ Marcar todas como entregues','▤ Imprimir roteiros','⇧ Exportar entregas'].map(x=><div className="quick-action" key={x}>{x}</div>)}</div></aside></div></>}
+function Dashboard({st,d,dataEntrega}){let dia=pedidosDaEntrega(d.pedidos,dataEntrega),pend=dia.filter(p=>p.status_pedido!=='Entregue');return <><div className="cards"><Card t="Faturamento total" v={brl(st.fat)}/><Card t="Faturamento semanal" v={brl(st.fatSem)} s={dataBR(inicioSemana())+' até '+dataBR(fimSemana())}/><Card t="Queijos para produzir" v={soma(pend,'quantidade')} s={dataBR(dataEntrega)}/><Card t="Entregas pendentes" v={pend.length} s={dataBR(dataEntrega)}/></div><div className="panel"><h3>Queijos da próxima entrega — {dataBR(dataEntrega)}</h3><TabelaPedidos pedidos={dia}/></div></>}
+function Card({t,v,s}){return <div className="card"><span>{t}</span><strong>{v}</strong><small>{s}</small></div>}
+function Clientes({d,busca,setBusca,setModal,del}){let arr=filtro(d.clientes,busca);return <><div className="filters"><div className="filter">⌕ <input placeholder="Buscar cliente por nome, telefone, bairro ou observação..." value={busca} onChange={e=>setBusca(e.target.value)}/></div><button className="sync" onClick={()=>setModal({tipo:'clientes'})}>+ Novo cliente</button></div><div className="panel table"><table><thead><tr><th>Cliente</th><th>Telefone</th><th>Bairro</th><th>Local</th><th>Observações</th><th>Ações</th></tr></thead><tbody>{arr.map(c=><tr key={c.id}><td><b>{c.nome}</b></td><td>{c.telefone||'-'}</td><td>{c.bairro||'-'}</td><td>{endereco(c)||'-'}</td><td>{c.observacoes||'-'}</td><td><button onClick={()=>setModal({tipo:'clientes',item:c})}>Editar</button> <button className="danger" onClick={()=>del('clientes',c.id)}>Excluir</button></td></tr>)}{!arr.length&&<tr><td colSpan="6" className="empty">Nenhum cliente encontrado.</td></tr>}</tbody></table></div></>}
+function Produtos({d,setModal,del}){return <><button className="sync" onClick={()=>setModal({tipo:'produtos'})}>+ Novo produto</button><Tabela cols={['Produto','Medida','Preço','Status','Ações']} rows={d.produtos.map(p=>[p.nome,p.unidade,brl(p.preco),p.ativo?'Ativo':'Inativo',<><button onClick={()=>setModal({tipo:'produtos',item:p})}>Editar</button> <button className="danger" onClick={()=>del('produtos',p.id)}>Excluir</button></>])}/></>}
+function Pedidos({d,st,busca,setBusca,setModal,del,statusPedido}){let arr=filtro(d.pedidos,busca);return <><div className="cards"><Card t="Pedidos" v={st.ped}/><Card t="Faturamento" v={brl(st.fat)}/><Card t="Entregas pendentes" v={st.pend}/><Card t="Pagamentos pendentes" v={st.pgp}/></div><div className="filters"><div className="filter">⌕ <input placeholder="Buscar pedido ou cliente..." value={busca} onChange={e=>setBusca(e.target.value)}/></div><button className="sync" onClick={()=>setModal({tipo:'pedidos'})}>+ Novo pedido</button></div><TabelaPedidosAgrupados pedidos={arr} statusPedido={statusPedido} setModal={setModal} del={del}/></>}
+function TabelaPedidosAgrupados({pedidos,statusPedido,setModal,del}){let grupos=agruparPorData(pedidos),datas=Object.keys(grupos);if(!datas.length)return <div className="panel empty">Nenhum pedido encontrado.</div>;return <>{datas.map(data=><div className="panel table" key={data}><h3>Entrega {dataBR(data)} — {grupos[data].length} pedidos • {brl(soma(grupos[data],'total'))}</h3><TabelaPedidos pedidos={grupos[data]} statusPedido={statusPedido} setModal={setModal} del={del} semPanel/></div>)}</>}
+function TabelaPedidos({pedidos,statusPedido,setModal,del,semPanel=false}){let tabela=<table><thead><tr><th>Pedido</th><th>Cliente</th><th>Entrega</th><th>Produto</th><th>Qtd.</th><th>Valor</th><th>Pagamento</th><th>Status</th><th>Ações</th></tr></thead><tbody>{pedidos.map(p=><tr key={p.id}><td>{p.codigo}</td><td>{p.cliente_nome}</td><td>{dataBR(p.data_entrega)}<br/><small>{p.tipo_entrega}</small></td><td>{p.produto_nome}</td><td>{p.quantidade}</td><td>{brl(p.total)}</td><td>{p.status_pagamento}</td><td>{p.status_pedido}</td><td>{statusPedido&&<><button onClick={()=>statusPedido(p.id,'status_pedido','Entregue')}>Entregue</button> <button onClick={()=>statusPedido(p.id,'status_pagamento','Pago')}>Pago</button></>}{setModal&&<button onClick={()=>setModal({tipo:'pedidos',item:p})}>Editar</button>} {del&&<button className="danger" onClick={()=>del('pedidos',p.id)}>Excluir</button>}</td></tr>)}{!pedidos.length&&<tr><td colSpan="9" className="empty">Nenhum pedido.</td></tr>}</tbody></table>;return semPanel?tabela:<div className="panel table">{tabela}</div>}
+function Relatorio({d,dataEntrega}){let arr=pedidosDaEntrega(d.pedidos,dataEntrega).filter(p=>p.status_pedido!=='Entregue'),gr=arr.reduce((a,p)=>{(a[p.produto_nome]||(a[p.produto_nome]=[])).push(p);return a},{});return <><div className="cards"><Card t="Produzir" v={soma(arr,'quantidade')} s={dataBR(dataEntrega)}/><Card t="Queijo 500g" v={soma(arr.filter(p=>String(p.produto_nome||'').includes('500')),'quantidade')}/><Card t="Queijo 1kg" v={soma(arr.filter(p=>String(p.produto_nome||'').includes('1kg')),'quantidade')}/><Card t="Total de pedidos" v={arr.length}/></div>{Object.keys(gr).map(k=><div className="prod-block" key={k}><h3>{k}</h3><Tabela cols={['Entrega','Cliente','Produto','Qtd.','Local','Observações']} rows={gr[k].map(p=>[dataBR(p.data_entrega),p.cliente_nome,p.produto_nome,p.quantidade,p.endereco,p.observacoes||'-'])}/></div>)}</>}
+function Admins({d,setModal,del}){return <><button className="sync" onClick={()=>setModal({tipo:'admins'})}>+ Novo ADM</button><Tabela cols={['Nome','Telefone','Papel','Status','Ações']} rows={d.admins.map(a=>[a.nome,a.telefone,a.papel,a.ativo?'Ativo':'Inativo',<><button onClick={()=>setModal({tipo:'admins',item:a})}>Editar</button> <button className="danger" onClick={()=>del('admins',a.id)}>Excluir</button></>])}/></>}
+function Tabela({cols,rows}){return <div className="panel table"><table><thead><tr>{cols.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{r.map((c,j)=><td key={j}>{c}</td>)}</tr>)}</tbody></table></div>}
+function Forms({modal,d,save,close,dataEntrega}){let tipo=modal.tipo,it=modal.item||{},[f,setF]=useState({...it});let S=(k,v)=>setF(x=>({...x,[k]:v}));let submit=e=>{e.preventDefault();if(tipo==='clientes')save(tipo,{id:f.id,nome:f.nome,telefone:tel(f.telefone),bairro:f.bairro,rua:f.rua,numero:f.numero,cidade:f.cidade,estado:f.estado,observacoes:f.observacoes});if(tipo==='produtos')save(tipo,{id:f.id,nome:f.nome,unidade:f.unidade,preco:Number(f.preco||0),ativo:f.ativo!==false});if(tipo==='admins')save(tipo,{id:f.id,nome:f.nome,telefone:tel(f.telefone),pin:String(f.pin||'1234'),papel:f.papel||'Colaborador',ativo:f.ativo!==false});if(tipo==='pedidos'){let c=d.clientes.find(x=>x.id===f.cliente_id)||{},p=d.produtos.find(x=>x.id===f.produto_id)||{};let q=Number(f.quantidade||1),preco=Number(f.preco_unitario||p.preco||0);save(tipo,{id:f.id,codigo:f.codigo||'WR-'+Math.random().toString(16).slice(2,8).toUpperCase(),cliente_id:c.id,cliente_nome:c.nome||f.cliente_nome,cliente_telefone:c.telefone||'',produto_id:p.id,produto_nome:p.nome||f.produto_nome,quantidade:q,preco_unitario:preco,total:Number(f.total||q*preco),tipo_entrega:f.tipo_entrega||'Entrega',endereco:f.endereco||endereco(c),forma_pagamento:f.forma_pagamento||'Pix',status_pagamento:f.status_pagamento||'Pendente',status_pedido:f.status_pedido||'Separado',data_entrega:f.data_entrega||dataEntrega||proxSexta(),observacoes:f.observacoes||''})}};return <div className="modal"><form onSubmit={submit}><h2>{it.id?'Editar':'Novo'} {tipo}</h2>{tipo==='clientes'&&<><Inp l="Nome" v={f.nome} s={v=>S('nome',v)}/><Inp l="Telefone" v={f.telefone} s={v=>S('telefone',v)}/><Inp l="Bairro" v={f.bairro} s={v=>S('bairro',v)}/><Inp l="Rua" v={f.rua} s={v=>S('rua',v)}/><Inp l="Número" v={f.numero} s={v=>S('numero',v)}/><Inp l="Cidade" v={f.cidade} s={v=>S('cidade',v)}/><Inp l="Observações" v={f.observacoes} s={v=>S('observacoes',v)}/></>}{tipo==='produtos'&&<><Sel l="Produto" v={f.nome||'Leite'} s={v=>S('nome',v)} ops={produtosPadrao}/><Sel l="Medida" v={f.unidade||'Litro'} s={v=>S('unidade',v)} ops={['Litro','Peça grande','Meio quilo']}/><Inp l="Preço" type="number" v={f.preco} s={v=>S('preco',v)}/></>}{tipo==='pedidos'&&<><Sel l="Cliente" v={f.cliente_id||''} s={v=>S('cliente_id',v)} ops={d.clientes.map(c=>[c.id,c.nome])}/><Sel l="Produto" v={f.produto_id||''} s={v=>S('produto_id',v)} ops={d.produtos.map(p=>[p.id,p.nome])}/><Inp l="Quantidade" type="number" v={f.quantidade||1} s={v=>S('quantidade',v)}/><Inp l="Valor total" type="number" v={f.total} s={v=>S('total',v)}/><Inp l="Data de entrega" type="date" v={f.data_entrega||dataEntrega||proxSexta()} s={v=>S('data_entrega',v)}/><Sel l="Status" v={f.status_pedido||'Separado'} s={v=>S('status_pedido',v)} ops={['Separado','Saiu para entrega','Entregue']}/><Inp l="Observações" v={f.observacoes} s={v=>S('observacoes',v)}/></>}{tipo==='admins'&&<><Inp l="Nome" v={f.nome} s={v=>S('nome',v)}/><Inp l="Telefone" v={f.telefone} s={v=>S('telefone',v)}/><Inp l="PIN" v={f.pin||'1234'} s={v=>S('pin',v)}/></>}<div className="actions"><button type="button" onClick={close}>Cancelar</button><button>Salvar</button></div></form></div>}
+function Inp({l,v,s,type='text'}){return <label>{l}<input required={l==='Nome'} type={type} value={v||''} onChange={e=>s(e.target.value)}/></label>}
+function Sel({l,v,s,ops}){let arr=ops.map(o=>Array.isArray(o)?o:[o,o]);return <label>{l}<select value={v} onChange={e=>s(e.target.value)}><option value="">Selecione</option>{arr.map(o=><option key={o[0]} value={o[0]}>{o[1]}</option>)}</select></label>}
+createRoot(document.getElementById('root')).render(<App/>);
